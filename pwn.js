@@ -46,6 +46,7 @@
 
       fetch('https://indico.iter.org/user/profile/', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: payload
       })
