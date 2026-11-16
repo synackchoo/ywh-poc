@@ -35,12 +35,10 @@
         .then(function (apiHtml) {
           var g2 = function (re) { var m = apiHtml.match(re); return m ? m[1] : null; };
 
-          var apiKey = g2(/<code[^>]*>([a-f0-9]{20,})<\/code>/)
-            || g2(/class="[^"]*token[^"]*"[^>]*>([a-f0-9]{20,})</)
-            || g2(/Token[^<]{0,200}?([a-f0-9]{32,})/)
-            || g2(/API Key[^<]{0,300}?([a-f0-9]{20,})/)
-            || g2(/id="api[_-]?key[^"]*"[^>]*>([^<]+)</)
-            || g2(/key.?token[^<]{0,100}?([a-f0-9]{20,})/i);
+          var apiKey = g2(/<dt>\s*Token\s*<\/dt>\s*<dd[^>]*>\s*([^<]+)/)
+            || g2(/<code[^>]*>([a-f0-9]{20,})<\/code>/)
+            || g2(/i-data-list[\s\S]{0,500}?Token[\s\S]{0,200}?<dd[^>]*>\s*([^<]+)/)
+            || g2(/Token<\/dt>\s*<dd>([^<]+)/);
 
           var created = g2(/[Cc]reated[^<]{0,100}?(\d{4}[^<]{5,20})/);
           var totalUses = g2(/[Tt]otal [Uu]ses[^<]{0,50}?(\d+)/);
